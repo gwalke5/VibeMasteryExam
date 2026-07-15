@@ -1,0 +1,1 @@
+ C:\\Users\\gabri\\OneDrive\\Documents\\CPSC4150\\Master_Exam\\VibeMasteryExam\\.dart_tool\\flutter_build\\d63be09e8683d727f061d21ad5bdb5d7\\native_assets.json: 
