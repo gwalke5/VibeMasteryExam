@@ -1,4 +1,9 @@
+import 'dart:async';
+import 'dart:math';
+
 import 'package:flutter/material.dart';
+
+import 'dolch_words.dart';
 
 void main() {
   runApp(const MyApp());
@@ -7,115 +12,269 @@ void main() {
 class MyApp extends StatelessWidget {
   const MyApp({super.key});
 
-  // This widget is the root of your application.
   @override
   Widget build(BuildContext context) {
     return MaterialApp(
-      title: 'Flutter Demo',
+      title: 'Sight Word Match',
       theme: ThemeData(
-        // This is the theme of your application.
-        //
-        // TRY THIS: Try running your application with "flutter run". You'll see
-        // the application has a purple toolbar. Then, without quitting the app,
-        // try changing the seedColor in the colorScheme below to Colors.green
-        // and then invoke "hot reload" (save your changes or press the "hot
-        // reload" button in a Flutter-supported IDE, or press "r" if you used
-        // the command line to start the app).
-        //
-        // Notice that the counter didn't reset back to zero; the application
-        // state is not lost during the reload. To reset the state, use hot
-        // restart instead.
-        //
-        // This works for code too, not just values: Most code changes can be
-        // tested with just a hot reload.
-        colorScheme: .fromSeed(seedColor: Colors.deepPurple),
+        colorScheme: ColorScheme.fromSeed(seedColor: Colors.deepPurple),
+        useMaterial3: true,
       ),
-      home: const MyHomePage(title: 'Flutter Demo Home Page'),
+      home: const MatchGameScreen(),
     );
   }
 }
 
-class MyHomePage extends StatefulWidget {
-  const MyHomePage({super.key, required this.title});
+/// A single card in the memory game grid.
+class _GameCard {
+  _GameCard(this.word);
 
-  // This widget is the home page of your application. It is stateful, meaning
-  // that it has a State object (defined below) that contains fields that affect
-  // how it looks.
-
-  // This class is the configuration for the state. It holds the values (in this
-  // case the title) provided by the parent (in this case the App widget) and
-  // used by the build method of the State. Fields in a Widget subclass are
-  // always marked "final".
-
-  final String title;
-
-  @override
-  State<MyHomePage> createState() => _MyHomePageState();
+  final String word;
+  bool faceUp = false;
+  bool matched = false;
 }
 
-class _MyHomePageState extends State<MyHomePage> {
-  int _counter = 0;
+class MatchGameScreen extends StatefulWidget {
+  const MatchGameScreen({super.key});
 
-  void _incrementCounter() {
+  @override
+  State<MatchGameScreen> createState() => _MatchGameScreenState();
+}
+
+class _MatchGameScreenState extends State<MatchGameScreen> {
+  static const int roundSeconds = 30;
+  static const int pairCount = 8; // 8 pairs -> 16 cards -> 4x4 grid
+  static const Duration mismatchDelay = Duration(milliseconds: 700);
+
+  final Random _random = Random();
+
+  late List<_GameCard> _cards;
+  final List<int> _flippedIndices = [];
+
+  Timer? _timer;
+  int _secondsLeft = roundSeconds;
+  int _matchesFound = 0;
+  bool _roundActive = true;
+  bool _inputLocked = false; // true while a mismatched pair is being shown
+
+  @override
+  void initState() {
+    super.initState();
+    _cards = [];
+    _startNewRound();
+  }
+
+  @override
+  void dispose() {
+    _timer?.cancel();
+    super.dispose();
+  }
+
+  void _startNewRound() {
+    _timer?.cancel();
+
+    // Pick pairCount unique random words, then duplicate and shuffle them.
+    final shuffledWords = List<String>.from(allDolchWords)..shuffle(_random);
+    final chosenWords = shuffledWords.take(pairCount).toList();
+    final pairedWords = [...chosenWords, ...chosenWords]..shuffle(_random);
+
     setState(() {
-      // This call to setState tells the Flutter framework that something has
-      // changed in this State, which causes it to rerun the build method below
-      // so that the display can reflect the updated values. If we changed
-      // _counter without calling setState(), then the build method would not be
-      // called again, and so nothing would appear to happen.
-      _counter++;
+      _cards = pairedWords.map((w) => _GameCard(w)).toList();
+      _flippedIndices.clear();
+      _matchesFound = 0;
+      _secondsLeft = roundSeconds;
+      _roundActive = true;
+      _inputLocked = false;
     });
+
+    _timer = Timer.periodic(const Duration(seconds: 1), (timer) {
+      if (_secondsLeft <= 1) {
+        _endRound(won: false);
+        return;
+      }
+      setState(() => _secondsLeft--);
+    });
+  }
+
+  void _endRound({required bool won}) {
+    _timer?.cancel();
+    setState(() {
+      _roundActive = false;
+      _inputLocked = true;
+    });
+    WidgetsBinding.instance.addPostFrameCallback((_) => _showResultDialog(won));
+  }
+
+  void _showResultDialog(bool won) {
+    if (!mounted) return;
+    showDialog<void>(
+      context: context,
+      barrierDismissible: false,
+      builder: (context) => AlertDialog(
+        title: Text(won ? "You matched them all! 🎉" : "Time's up!"),
+        content: Text('You found $_matchesFound of $pairCount pairs.'),
+        actions: [
+          TextButton(
+            onPressed: () {
+              Navigator.of(context).pop();
+              _startNewRound();
+            },
+            child: const Text('Play Again'),
+          ),
+        ],
+      ),
+    );
+  }
+
+  void _onCardTap(int index) {
+    final card = _cards[index];
+    if (!_roundActive || _inputLocked || card.faceUp || card.matched) return;
+
+    setState(() {
+      card.faceUp = true;
+      _flippedIndices.add(index);
+    });
+
+    if (_flippedIndices.length < 2) return;
+
+    _inputLocked = true;
+    final firstIndex = _flippedIndices[0];
+    final secondIndex = _flippedIndices[1];
+    final isMatch = _cards[firstIndex].word == _cards[secondIndex].word;
+
+    if (isMatch) {
+      // Keep both cards face up; briefly delay so the player can register
+      // the match before the tiles lock in.
+      Future.delayed(const Duration(milliseconds: 200), () {
+        if (!mounted) return;
+        setState(() {
+          _cards[firstIndex].matched = true;
+          _cards[secondIndex].matched = true;
+          _matchesFound++;
+          _flippedIndices.clear();
+          _inputLocked = false;
+        });
+        if (_matchesFound == pairCount) {
+          _endRound(won: true);
+        }
+      });
+    } else {
+      Future.delayed(mismatchDelay, () {
+        if (!mounted) return;
+        setState(() {
+          _cards[firstIndex].faceUp = false;
+          _cards[secondIndex].faceUp = false;
+          _flippedIndices.clear();
+          _inputLocked = false;
+        });
+      });
+    }
   }
 
   @override
   Widget build(BuildContext context) {
-    // This method is rerun every time setState is called, for instance as done
-    // by the _incrementCounter method above.
-    //
-    // The Flutter framework has been optimized to make rerunning build methods
-    // fast, so that you can just rebuild anything that needs updating rather
-    // than having to individually change instances of widgets.
+    final lowOnTime = _secondsLeft <= 10;
+
     return Scaffold(
       appBar: AppBar(
-        // TRY THIS: Try changing the color here to a specific color (to
-        // Colors.amber, perhaps?) and trigger a hot reload to see the AppBar
-        // change color while the other colors stay the same.
+        title: const Text('Sight Word Match'),
         backgroundColor: Theme.of(context).colorScheme.inversePrimary,
-        // Here we take the value from the MyHomePage object that was created by
-        // the App.build method, and use it to set our appbar title.
-        title: Text(widget.title),
+        actions: [
+          Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 16),
+            child: Center(
+              child: Text(
+                '⏱ $_secondsLeft s',
+                style: TextStyle(
+                  fontSize: 20,
+                  fontWeight: FontWeight.bold,
+                  color: lowOnTime ? Colors.red : null,
+                ),
+              ),
+            ),
+          ),
+        ],
       ),
-      body: Center(
-        // Center is a layout widget. It takes a single child and positions it
-        // in the middle of the parent.
+      body: Padding(
+        padding: const EdgeInsets.all(12.0),
         child: Column(
-          // Column is also a layout widget. It takes a list of children and
-          // arranges them vertically. By default, it sizes itself to fit its
-          // children horizontally, and tries to be as tall as its parent.
-          //
-          // Column has various properties to control how it sizes itself and
-          // how it positions its children. Here we use mainAxisAlignment to
-          // center the children vertically; the main axis here is the vertical
-          // axis because Columns are vertical (the cross axis would be
-          // horizontal).
-          //
-          // TRY THIS: Invoke "debug painting" (choose the "Toggle Debug Paint"
-          // action in the IDE, or press "p" in the console), to see the
-          // wireframe for each widget.
-          mainAxisAlignment: .center,
           children: [
-            const Text('You have pushed the button this many times:'),
             Text(
-              '$_counter',
-              style: Theme.of(context).textTheme.headlineMedium,
+              'Matches: $_matchesFound / $pairCount',
+              style: Theme.of(context).textTheme.titleMedium,
+            ),
+            const SizedBox(height: 12),
+            Expanded(
+              child: GridView.builder(
+                itemCount: _cards.length,
+                gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
+                  crossAxisCount: 4,
+                  crossAxisSpacing: 8,
+                  mainAxisSpacing: 8,
+                ),
+                itemBuilder: (context, index) => _CardTile(
+                  card: _cards[index],
+                  onTap: () => _onCardTap(index),
+                ),
+              ),
+            ),
+            const SizedBox(height: 12),
+            ElevatedButton.icon(
+              onPressed: _startNewRound,
+              icon: const Icon(Icons.refresh),
+              label: const Text('New Round'),
             ),
           ],
         ),
       ),
-      floatingActionButton: FloatingActionButton(
-        onPressed: _incrementCounter,
-        tooltip: 'Increment',
-        child: const Icon(Icons.add),
+    );
+  }
+}
+
+class _CardTile extends StatelessWidget {
+  const _CardTile({required this.card, required this.onTap});
+
+  final _GameCard card;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    final revealed = card.faceUp || card.matched;
+    final colorScheme = Theme.of(context).colorScheme;
+
+    return GestureDetector(
+      onTap: onTap,
+      child: AnimatedSwitcher(
+        duration: const Duration(milliseconds: 200),
+        transitionBuilder: (child, animation) =>
+            ScaleTransition(scale: animation, child: child),
+        child: Container(
+          key: ValueKey(revealed),
+          decoration: BoxDecoration(
+            color: card.matched
+                ? colorScheme.primaryContainer
+                : revealed
+                    ? colorScheme.secondaryContainer
+                    : colorScheme.primary,
+            borderRadius: BorderRadius.circular(10),
+            border: card.matched
+                ? Border.all(color: colorScheme.primary, width: 2)
+                : null,
+          ),
+          alignment: Alignment.center,
+          padding: const EdgeInsets.all(4),
+          child: revealed
+              ? Text(
+                  card.word,
+                  textAlign: TextAlign.center,
+                  style: TextStyle(
+                    fontWeight: FontWeight.bold,
+                    fontSize: 14,
+                    color: colorScheme.onSecondaryContainer,
+                  ),
+                )
+              : Icon(Icons.help_outline, color: colorScheme.onPrimary),
+        ),
       ),
     );
   }
