@@ -1,17 +1,22 @@
-# flutter_application_1
+### Vibe Mastery Exam: Dolch Sight-Word Game App ###
 
-A new Flutter project.
+This is a completely different assignment from Solo 3 and the project, featuring different code and performing a separate
+function.
 
-## Getting Started
+### Scoring System ###
 
-This project is a starting point for a Flutter application.
+The score is calculated using the equation, (total_matches) + ceil(((total_matches)^2) * (time_remaining/15))
 
-A few resources to get you started if this is your first Flutter project:
+The fifteen is half the total time alloted per round.
+This scoring system rewards fast completions.  
 
-- [Learn Flutter](https://docs.flutter.dev/get-started/learn-flutter)
-- [Write your first Flutter app](https://docs.flutter.dev/get-started/codelab)
-- [Flutter learning resources](https://docs.flutter.dev/reference/learning-resources)
+I chose This equation over simply incrementing total_matches because I wanted players to be rewarded for completing
+quickly. The cost of this approach is incentivizing rushed play to get the highest score possible. This will hold up until
+the player atrophies and begins to slowly worsen over an extended length of play. 
 
-For help getting started with Flutter development, view the
-[online documentation](https://docs.flutter.dev/), which offers tutorials,
-samples, guidance on mobile development, and a full API reference.
+### Game Chosen ###
+
+I chose the word matching game over the flash card game because it would be much easier to implement with AI, and,
+from what I thought, would prevent major errors when generating code. The cost of this approach is the reward for
+simple pattern recognition and does not test understanding of words. This will hold up until the player has played
+so many times that the tool becomes less capable.

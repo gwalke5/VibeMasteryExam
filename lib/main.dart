@@ -205,8 +205,10 @@ class _MatchGameScreenState extends State<MatchGameScreen> {
     final score = _matchesFound +
         (pow(_matchesFound, 2) * (timeLeft / 15)).ceil();
 
+    // ScoreStore itself is resilient to storage failures/timeouts, so
+    // these awaits are guaranteed to resolve without throwing.
     final oldTotal = await ScoreStore.getTotalScore();
-    final newTotal = await ScoreStore.addToTotalScore(score);
+    final newTotal = await ScoreStore.recordRoundScore(score);
 
     if (!mounted) return;
     Navigator.of(context).pushReplacement(
@@ -465,6 +467,24 @@ class ResultsScreen extends StatelessWidget {
                 ),
               ),
               onPressed: () {
+                Navigator.of(context).pushReplacement(
+                  MaterialPageRoute(
+                    builder: (context) => const StatsScreen(),
+                  ),
+                );
+              },
+              icon: const Icon(Icons.bar_chart),
+              label: const Text('View Stats'),
+            ),
+            const SizedBox(height: 12),
+            ElevatedButton.icon(
+              style: ElevatedButton.styleFrom(
+                padding: const EdgeInsets.symmetric(
+                  horizontal: 24,
+                  vertical: 16,
+                ),
+              ),
+              onPressed: () {
                 Navigator.of(context).pushAndRemoveUntil(
                   MaterialPageRoute(
                     builder: (context) => const LevelSelectScreen(),
@@ -478,6 +498,118 @@ class ResultsScreen extends StatelessWidget {
           ],
         ),
       ),
+    );
+  }
+}
+
+/// Shows the player's cumulative score and every individual round score
+/// recorded so far. Reached from the results screen; its only way out is
+/// back to the difficulty selection screen.
+class StatsScreen extends StatefulWidget {
+  const StatsScreen({super.key});
+
+  @override
+  State<StatsScreen> createState() => _StatsScreenState();
+}
+
+class _StatsScreenState extends State<StatsScreen> {
+  int? _totalScore;
+  List<int>? _history;
+
+  @override
+  void initState() {
+    super.initState();
+    _load();
+  }
+
+  Future<void> _load() async {
+    final total = await ScoreStore.getTotalScore();
+    final history = await ScoreStore.getScoreHistory();
+    if (!mounted) return;
+    setState(() {
+      _totalScore = total;
+      _history = history;
+    });
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final loading = _totalScore == null || _history == null;
+
+    return Scaffold(
+      appBar: AppBar(
+        title: const Text('Stats'),
+        backgroundColor: Theme.of(context).colorScheme.inversePrimary,
+        automaticallyImplyLeading: false,
+      ),
+      body: loading
+          ? const Center(child: CircularProgressIndicator())
+          : SafeArea(
+              child: Padding(
+                padding: const EdgeInsets.all(24.0),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
+                  children: [
+                    Text(
+                      'Total Score: $_totalScore',
+                      textAlign: TextAlign.center,
+                      style: Theme.of(context).textTheme.headlineSmall,
+                    ),
+                    const SizedBox(height: 24),
+                    Text(
+                      'Previous Attempts',
+                      style: Theme.of(context).textTheme.titleMedium,
+                    ),
+                    const SizedBox(height: 8),
+                    Expanded(
+                      child: _history!.isEmpty
+                          ? const Center(child: Text('No attempts yet.'))
+                          : ListView.separated(
+                              itemCount: _history!.length,
+                              separatorBuilder: (context, index) =>
+                                  const Divider(),
+                              itemBuilder: (context, index) {
+                                // Most recent attempt first.
+                                final reversedIndex =
+                                    _history!.length - 1 - index;
+                                final attemptNumber = reversedIndex + 1;
+                                final score = _history![reversedIndex];
+                                return ListTile(
+                                  leading: CircleAvatar(
+                                    child: Text('$attemptNumber'),
+                                  ),
+                                  title: Text('Attempt $attemptNumber'),
+                                  trailing: Text(
+                                    '$score',
+                                    style: const TextStyle(
+                                      fontWeight: FontWeight.bold,
+                                      fontSize: 16,
+                                    ),
+                                  ),
+                                );
+                              },
+                            ),
+                    ),
+                    const SizedBox(height: 16),
+                    ElevatedButton.icon(
+                      style: ElevatedButton.styleFrom(
+                        padding: const EdgeInsets.symmetric(vertical: 16),
+                      ),
+                      onPressed: () {
+                        Navigator.of(context).pushAndRemoveUntil(
+                          MaterialPageRoute(
+                            builder: (context) => const LevelSelectScreen(),
+                          ),
+                          (route) => false,
+                        );
+                      },
+                      icon: const Icon(Icons.arrow_back),
+                      label: const Text('Back to Difficulty Selection'),
+                    ),
+                  ],
+                ),
+              ),
+            ),
     );
   }
 }
