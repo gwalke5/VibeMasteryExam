@@ -151,49 +151,41 @@ class _MatchGameScreenState extends State<MatchGameScreen> {
 
     _timer = Timer.periodic(const Duration(seconds: 1), (timer) {
       if (_secondsLeft <= 1) {
-        _endRound(won: false);
+        setState(() => _secondsLeft = 0);
+        _endRound();
         return;
       }
       setState(() => _secondsLeft--);
     });
   }
 
-  void _endRound({required bool won}) {
+  void _endRound() {
     _timer?.cancel();
     setState(() {
       _roundActive = false;
       _inputLocked = true;
     });
-    WidgetsBinding.instance.addPostFrameCallback((_) => _showResultDialog(won));
-  }
 
-  void _showResultDialog(bool won) {
-    if (!mounted) return;
     final totalPairs = _cards.length ~/ 2;
-    showDialog<void>(
-      context: context,
-      barrierDismissible: false,
-      builder: (context) => AlertDialog(
-        title: Text(won ? "You matched them all! 🎉" : "Time's up!"),
-        content: Text('You found $_matchesFound of $totalPairs pairs.'),
-        actions: [
-          TextButton(
-            onPressed: () {
-              Navigator.of(context).pop();
-              Navigator.of(context).pop(); // back to level select
-            },
-            child: const Text('Change Level'),
+    final timeLeft = _secondsLeft;
+    // score = matches + ceil((matches^2) * (time_left / 15))
+    final score = _matchesFound +
+        (pow(_matchesFound, 2) * (timeLeft / 15)).ceil();
+
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted) return;
+      Navigator.of(context).pushReplacement(
+        MaterialPageRoute(
+          builder: (context) => ResultsScreen(
+            level: widget.level,
+            matchesFound: _matchesFound,
+            totalPairs: totalPairs,
+            timeLeft: timeLeft,
+            score: score,
           ),
-          TextButton(
-            onPressed: () {
-              Navigator.of(context).pop();
-              _startNewRound();
-            },
-            child: const Text('Play Again'),
-          ),
-        ],
-      ),
-    );
+        ),
+      );
+    });
   }
 
   void _onCardTap(int index) {
@@ -225,7 +217,7 @@ class _MatchGameScreenState extends State<MatchGameScreen> {
           _inputLocked = false;
         });
         if (_matchesFound == _cards.length ~/ 2) {
-          _endRound(won: true);
+          _endRound();
         }
       });
     } else {
@@ -345,6 +337,91 @@ class _CardTile extends StatelessWidget {
                   ),
                 )
               : Icon(Icons.help_outline, color: colorScheme.onPrimary),
+        ),
+      ),
+    );
+  }
+}
+
+/// Shown after a round ends (either all pairs matched or time ran out).
+class ResultsScreen extends StatelessWidget {
+  const ResultsScreen({
+    super.key,
+    required this.level,
+    required this.matchesFound,
+    required this.totalPairs,
+    required this.timeLeft,
+    required this.score,
+  });
+
+  final String level;
+  final int matchesFound;
+  final int totalPairs;
+  final int timeLeft;
+  final int score;
+
+  @override
+  Widget build(BuildContext context) {
+    final won = matchesFound == totalPairs;
+
+    return Scaffold(
+      appBar: AppBar(
+        title: const Text('Round Results'),
+        backgroundColor: Theme.of(context).colorScheme.inversePrimary,
+        automaticallyImplyLeading: false,
+      ),
+      body: Padding(
+        padding: const EdgeInsets.all(24.0),
+        child: Column(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            Text(
+              won ? "You matched them all! 🎉" : "Time's up!",
+              textAlign: TextAlign.center,
+              style: Theme.of(context).textTheme.headlineSmall,
+            ),
+            const SizedBox(height: 24),
+            Text(
+              'Level: $level',
+              style: Theme.of(context).textTheme.titleMedium,
+            ),
+            const SizedBox(height: 8),
+            Text(
+              'Matches: $matchesFound / $totalPairs',
+              style: Theme.of(context).textTheme.titleMedium,
+            ),
+            const SizedBox(height: 8),
+            Text(
+              'Time left: $timeLeft s',
+              style: Theme.of(context).textTheme.titleMedium,
+            ),
+            const SizedBox(height: 24),
+            Text(
+              'Score: $score',
+              style: Theme.of(context).textTheme.displaySmall?.copyWith(
+                    fontWeight: FontWeight.bold,
+                  ),
+            ),
+            const SizedBox(height: 40),
+            ElevatedButton.icon(
+              style: ElevatedButton.styleFrom(
+                padding: const EdgeInsets.symmetric(
+                  horizontal: 24,
+                  vertical: 16,
+                ),
+              ),
+              onPressed: () {
+                Navigator.of(context).pushAndRemoveUntil(
+                  MaterialPageRoute(
+                    builder: (context) => const LevelSelectScreen(),
+                  ),
+                  (route) => false,
+                );
+              },
+              icon: const Icon(Icons.home),
+              label: const Text('Back to Start'),
+            ),
+          ],
         ),
       ),
     );
