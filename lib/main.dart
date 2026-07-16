@@ -20,7 +20,65 @@ class MyApp extends StatelessWidget {
         colorScheme: ColorScheme.fromSeed(seedColor: Colors.deepPurple),
         useMaterial3: true,
       ),
-      home: const MatchGameScreen(),
+      home: const LevelSelectScreen(),
+    );
+  }
+}
+
+/// The difficulty levels, in increasing order, and the Dolch category each
+/// one draws its words from.
+const List<String> difficultyLevels = [
+  'Pre-Primer',
+  'Primer',
+  'First Grade',
+  'Second Grade',
+  'Third Grade',
+];
+
+class LevelSelectScreen extends StatelessWidget {
+  const LevelSelectScreen({super.key});
+
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      appBar: AppBar(
+        title: const Text('Sight Word Match'),
+        backgroundColor: Theme.of(context).colorScheme.inversePrimary,
+      ),
+      body: Padding(
+        padding: const EdgeInsets.all(24.0),
+        child: Column(
+          mainAxisAlignment: MainAxisAlignment.center,
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            Text(
+              'Choose a difficulty level',
+              textAlign: TextAlign.center,
+              style: Theme.of(context).textTheme.headlineSmall,
+            ),
+            const SizedBox(height: 32),
+            for (final level in difficultyLevels) ...[
+              ElevatedButton(
+                style: ElevatedButton.styleFrom(
+                  padding: const EdgeInsets.symmetric(vertical: 16),
+                ),
+                onPressed: () {
+                  Navigator.of(context).push(
+                    MaterialPageRoute(
+                      builder: (context) => MatchGameScreen(
+                        level: level,
+                        words: dolchWordsByCategory[level]!,
+                      ),
+                    ),
+                  );
+                },
+                child: Text(level, style: const TextStyle(fontSize: 18)),
+              ),
+              const SizedBox(height: 12),
+            ],
+          ],
+        ),
+      ),
     );
   }
 }
@@ -35,7 +93,10 @@ class _GameCard {
 }
 
 class MatchGameScreen extends StatefulWidget {
-  const MatchGameScreen({super.key});
+  const MatchGameScreen({super.key, required this.level, required this.words});
+
+  final String level;
+  final List<String> words;
 
   @override
   State<MatchGameScreen> createState() => _MatchGameScreenState();
@@ -73,9 +134,10 @@ class _MatchGameScreenState extends State<MatchGameScreen> {
   void _startNewRound() {
     _timer?.cancel();
 
-    // Pick pairCount unique random words, then duplicate and shuffle them.
-    final shuffledWords = List<String>.from(allDolchWords)..shuffle(_random);
-    final chosenWords = shuffledWords.take(pairCount).toList();
+    // Pick pairCount unique random words from this level, then duplicate
+    // and shuffle them into a fresh random table.
+    final pool = List<String>.from(widget.words)..shuffle(_random);
+    final chosenWords = pool.take(min(pairCount, pool.length)).toList();
     final pairedWords = [...chosenWords, ...chosenWords]..shuffle(_random);
 
     setState(() {
@@ -107,13 +169,21 @@ class _MatchGameScreenState extends State<MatchGameScreen> {
 
   void _showResultDialog(bool won) {
     if (!mounted) return;
+    final totalPairs = _cards.length ~/ 2;
     showDialog<void>(
       context: context,
       barrierDismissible: false,
       builder: (context) => AlertDialog(
         title: Text(won ? "You matched them all! 🎉" : "Time's up!"),
-        content: Text('You found $_matchesFound of $pairCount pairs.'),
+        content: Text('You found $_matchesFound of $totalPairs pairs.'),
         actions: [
+          TextButton(
+            onPressed: () {
+              Navigator.of(context).pop();
+              Navigator.of(context).pop(); // back to level select
+            },
+            child: const Text('Change Level'),
+          ),
           TextButton(
             onPressed: () {
               Navigator.of(context).pop();
@@ -154,7 +224,7 @@ class _MatchGameScreenState extends State<MatchGameScreen> {
           _flippedIndices.clear();
           _inputLocked = false;
         });
-        if (_matchesFound == pairCount) {
+        if (_matchesFound == _cards.length ~/ 2) {
           _endRound(won: true);
         }
       });
@@ -174,10 +244,11 @@ class _MatchGameScreenState extends State<MatchGameScreen> {
   @override
   Widget build(BuildContext context) {
     final lowOnTime = _secondsLeft <= 10;
+    final totalPairs = _cards.length ~/ 2;
 
     return Scaffold(
       appBar: AppBar(
-        title: const Text('Sight Word Match'),
+        title: Text('Sight Word Match — ${widget.level}'),
         backgroundColor: Theme.of(context).colorScheme.inversePrimary,
         actions: [
           Padding(
@@ -200,7 +271,7 @@ class _MatchGameScreenState extends State<MatchGameScreen> {
         child: Column(
           children: [
             Text(
-              'Matches: $_matchesFound / $pairCount',
+              'Matches: $_matchesFound / $totalPairs',
               style: Theme.of(context).textTheme.titleMedium,
             ),
             const SizedBox(height: 12),
