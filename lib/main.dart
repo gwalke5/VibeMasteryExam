@@ -4,6 +4,7 @@ import 'dart:math';
 import 'package:flutter/material.dart';
 
 import 'dolch_words.dart';
+import 'score_store.dart';
 
 void main() {
   runApp(const MyApp());
@@ -35,8 +36,27 @@ const List<String> difficultyLevels = [
   'Third Grade',
 ];
 
-class LevelSelectScreen extends StatelessWidget {
+class LevelSelectScreen extends StatefulWidget {
   const LevelSelectScreen({super.key});
+
+  @override
+  State<LevelSelectScreen> createState() => _LevelSelectScreenState();
+}
+
+class _LevelSelectScreenState extends State<LevelSelectScreen> {
+  int? _totalScore;
+
+  @override
+  void initState() {
+    super.initState();
+    _loadTotalScore();
+  }
+
+  Future<void> _loadTotalScore() async {
+    final total = await ScoreStore.getTotalScore();
+    if (!mounted) return;
+    setState(() => _totalScore = total);
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -51,6 +71,14 @@ class LevelSelectScreen extends StatelessWidget {
           mainAxisAlignment: MainAxisAlignment.center,
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
+            Text(
+              _totalScore == null
+                  ? 'Total Score: …'
+                  : 'Total Score: $_totalScore',
+              textAlign: TextAlign.center,
+              style: Theme.of(context).textTheme.titleLarge,
+            ),
+            const SizedBox(height: 24),
             Text(
               'Choose a difficulty level',
               textAlign: TextAlign.center,
@@ -117,6 +145,7 @@ class _MatchGameScreenState extends State<MatchGameScreen> {
   int _matchesFound = 0;
   bool _roundActive = true;
   bool _inputLocked = false; // true while a mismatched pair is being shown
+  bool _roundEnding = false; // guards _endRound against running twice
 
   @override
   void initState() {
@@ -147,6 +176,7 @@ class _MatchGameScreenState extends State<MatchGameScreen> {
       _secondsLeft = roundSeconds;
       _roundActive = true;
       _inputLocked = false;
+      _roundEnding = false;
     });
 
     _timer = Timer.periodic(const Duration(seconds: 1), (timer) {
@@ -159,7 +189,10 @@ class _MatchGameScreenState extends State<MatchGameScreen> {
     });
   }
 
-  void _endRound() {
+  Future<void> _endRound() async {
+    if (_roundEnding) return; // already wrapping up this round
+    _roundEnding = true;
+
     _timer?.cancel();
     setState(() {
       _roundActive = false;
@@ -172,20 +205,23 @@ class _MatchGameScreenState extends State<MatchGameScreen> {
     final score = _matchesFound +
         (pow(_matchesFound, 2) * (timeLeft / 15)).ceil();
 
-    WidgetsBinding.instance.addPostFrameCallback((_) {
-      if (!mounted) return;
-      Navigator.of(context).pushReplacement(
-        MaterialPageRoute(
-          builder: (context) => ResultsScreen(
-            level: widget.level,
-            matchesFound: _matchesFound,
-            totalPairs: totalPairs,
-            timeLeft: timeLeft,
-            score: score,
-          ),
+    final oldTotal = await ScoreStore.getTotalScore();
+    final newTotal = await ScoreStore.addToTotalScore(score);
+
+    if (!mounted) return;
+    Navigator.of(context).pushReplacement(
+      MaterialPageRoute(
+        builder: (context) => ResultsScreen(
+          level: widget.level,
+          matchesFound: _matchesFound,
+          totalPairs: totalPairs,
+          timeLeft: timeLeft,
+          score: score,
+          oldTotal: oldTotal,
+          newTotal: newTotal,
         ),
-      );
-    });
+      ),
+    );
   }
 
   void _onCardTap(int index) {
@@ -352,6 +388,8 @@ class ResultsScreen extends StatelessWidget {
     required this.totalPairs,
     required this.timeLeft,
     required this.score,
+    required this.oldTotal,
+    required this.newTotal,
   });
 
   final String level;
@@ -359,6 +397,8 @@ class ResultsScreen extends StatelessWidget {
   final int totalPairs;
   final int timeLeft;
   final int score;
+  final int oldTotal;
+  final int newTotal;
 
   @override
   Widget build(BuildContext context) {
@@ -370,10 +410,10 @@ class ResultsScreen extends StatelessWidget {
         backgroundColor: Theme.of(context).colorScheme.inversePrimary,
         automaticallyImplyLeading: false,
       ),
-      body: Padding(
+      body: SingleChildScrollView(
         padding: const EdgeInsets.all(24.0),
         child: Column(
-          mainAxisAlignment: MainAxisAlignment.center,
+          mainAxisSize: MainAxisSize.min,
           children: [
             Text(
               won ? "You matched them all! 🎉" : "Time's up!",
@@ -399,6 +439,20 @@ class ResultsScreen extends StatelessWidget {
             Text(
               'Score: $score',
               style: Theme.of(context).textTheme.displaySmall?.copyWith(
+                    fontWeight: FontWeight.bold,
+                  ),
+            ),
+            const SizedBox(height: 24),
+            const Divider(),
+            const SizedBox(height: 12),
+            Text(
+              'Previous Total: $oldTotal',
+              style: Theme.of(context).textTheme.titleMedium,
+            ),
+            const SizedBox(height: 4),
+            Text(
+              'New Total: $newTotal',
+              style: Theme.of(context).textTheme.titleLarge?.copyWith(
                     fontWeight: FontWeight.bold,
                   ),
             ),
